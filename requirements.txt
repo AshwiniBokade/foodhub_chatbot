@@ -1,0 +1,6 @@
+gradio
+langchain
+langchain-community
+langchain-groq
+sqlalchemy
+sqlite3-binary
