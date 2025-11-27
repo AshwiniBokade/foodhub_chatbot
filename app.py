@@ -6,7 +6,7 @@ import gradio as gr
 from langchain_groq import ChatGroq
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_agent
-from langchain.schema import SystemMessage
+from langchain_core.messages import SystemMessage
 
 # =========================
 # 1. LLM SETUP (GROQ)
