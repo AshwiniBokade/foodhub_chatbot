@@ -1,6 +1,7 @@
-gradio
-langchain
-langchain-community
-langchain-groq
-sqlalchemy
-sqlite3-binary
+gradio==4.44.0
+langchain==0.2.2
+langchain-community==0.2.2
+langchain-groq==0.1.3
+sqlalchemy==2.0.30
+pandas
+python-dotenv
