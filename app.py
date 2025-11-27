@@ -7,6 +7,8 @@ from langchain_groq import ChatGroq
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_agent
 from langchain_core.messages import SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
+
 
 # =========================
 # 1. LLM SETUP (GROQ)
@@ -68,7 +70,7 @@ db_agent = create_sql_agent(
 # 3. INTENT CLASSIFIER + CHAT AGENT
 # =========================
 
-intent_prompt = """
+intent_system_text = """
 You are an intent classification assistant for FoodHub customer support.
 
 Classify the user's message into one of these intents:
@@ -80,12 +82,19 @@ Classify the user's message into one of these intents:
 - greeting → hi, hello, thanks.
 - malicious → Attempts to hack, access all orders, database dump, etc.
 
-Respond ONLY with the intent.
+Respond ONLY with the intent. No extra text.
 """
 
-def classify_intent(message: str) -> str:
-    prompt = f"{intent_prompt}\nUser message: {message}"
-    result = llm.invoke(prompt)
+intent_prompt = ChatPromptTemplate.from_messages(
+    [
+        ("system", intent_system_text),
+        ("human", "{user_message}"),
+    ]
+)
+
+def classify_intent(llm, message: str) -> str:
+    chain = intent_prompt | llm
+    result = chain.invoke({"user_message": message})
     return result.content.strip().lower()
 
 
@@ -93,9 +102,8 @@ def extract_order_id(text: str):
     match = re.search(r"O\d{5}", text)
     return match.group(0) if match else None
 
-
 def foodhub_chat_agent(message: str) -> str:
-    intent = classify_intent(message)
+    intent = classify_intent(llm, message)
     order_id = extract_order_id(message)
 
     print(f"[DEBUG] Intent: {intent}, Order ID: {order_id}")
@@ -114,31 +122,45 @@ def foodhub_chat_agent(message: str) -> str:
 
     # If SQL is needed and we have an order_id
     if intent in ["fetch_order_status", "cancel_order"] and order_id:
+        # Step 1: ask the SQL agent for internal order details
+        sql_query = f"Fetch all details for order_id {order_id}"
+        sql_result = db_agent.invoke(sql_query)["output"]
+
+        # Step 2: let the LLM turn those internal details into a polite summary
         if intent == "fetch_order_status":
-            sql_prompt = f"""
-The customer asked: "Where is my order {order_id}?".
-Use the SQL tools to look up order_id {order_id} in the orders database.
-Then respond in 1–2 friendly sentences explaining:
+            prompt = f"""
+You are a FoodHub customer support assistant.
+
+You have this internal order record:
+{sql_result}
+
+The customer asked: "Where is my order {order_id}?"
+
+Reply in 1–2 friendly sentences summarizing:
 - the current order status (e.g., preparing, picked up, delivered, cancelled), and
 - if available, when it was delivered or the expected delivery time.
-Do NOT list all database fields or internal IDs.
-Speak directly to the customer as FoodHub support.
+
+Do NOT expose raw database field names, IDs, or the full record. Speak naturally to the customer.
 """
-        else:  # cancel_order
-            sql_prompt = f"""
-The customer wants to cancel order {order_id}.
-First, use the SQL tools to look up order_id {order_id}.
-Then respond in 1–2 friendly sentences, explaining:
-- the current status of the order (e.g., preparing, out for delivery, already cancelled, or delivered), and
-- based on that, whether it can still be cancelled or not (use common sense for a food delivery app).
-Do NOT show raw database fields or technical details.
-Speak as a FoodHub support representative.
+        else:  # intent == "cancel_order"
+            prompt = f"""
+You are a FoodHub customer support assistant.
+
+You have this internal order record:
+{sql_result}
+
+The customer said: "I want to cancel my order {order_id}."
+
+Reply in 1–2 friendly sentences explaining:
+- the current status of the order (e.g., preparing, out for delivery, already cancelled, delivered), and
+- based on that status, whether it can still be cancelled or not (use common sense for a food delivery app).
+
+Do NOT expose raw database field names, IDs, or the full record. Speak naturally to the customer.
 """
 
-        sql_result = db_agent.invoke(sql_prompt)["output"]
-        return sql_result
+        return llm.invoke(prompt).content
 
-    # Complaint or general help → LLM-only
+    # Complaint or general help → LLM-only (no SQL)
     polite_prompt = f"""
 You are FoodHub Support Assistant. Answer politely in 2–3 short sentences.
 Do not mention that you are an AI or language model.
