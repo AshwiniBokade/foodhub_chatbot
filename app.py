@@ -95,13 +95,16 @@ def fetch_order_by_id(order_id: str) -> Optional[Dict[str, Any]]:
 
 INTENT_SYSTEM_PROMPT = """
 You are an intent classification assistant for FoodHub customer support.
+
 You must classify the customer's message into exactly ONE of these intents:
+
 - fetch_order_status  → “where is my order”, “track my order”, “status of order O123”
 - cancel_order        → asking to cancel a specific order
 - complaint           → cold food, late delivery, wrong item, quality issues, refund requests
 - general_help        → questions about policies, delivery time ranges, payment, how app works
 - greeting            → hi, hello, hey, thanks, good morning, etc.
 - malicious           → hacking attempts, requests for all orders, all customer data, database dump
+
 Return ONLY the intent string (e.g., fetch_order_status). No extra words.
 """
 
@@ -178,6 +181,7 @@ def can_order_be_cancelled(order: Dict[str, Any]) -> str:
 
 SUPPORT_GENERAL_SYSTEM_PROMPT = """
 You are FoodHub Support Assistant for an online food delivery app.
+
 Guidelines:
 - Answer in 2–3 short, friendly sentences.
 - Be clear, polite, and helpful.
@@ -254,13 +258,20 @@ with gr.Blocks() as demo:
     gr.Markdown("## 🍕 FoodHub Order Support Chatbot")
     gr.Markdown(
         "Ask about your order status, cancellations, late delivery, or issues with your food.<br>"
-        "For order-specific queries, please mention your <b>order ID</b> (for example: <code>O12488</code>)."
+        "For order-specific queries, please mention your <b>order ID</b> "
+        "(for example: <code>O12488</code>)."
     )
 
     gr.ChatInterface(
         fn=foodhub_chat_agent,
         title="FoodHub Order Assistant",
         description="Chat with FoodHub support about your orders.",
+        textbox=gr.Textbox(
+            label="Type your message",
+            placeholder="e.g., Where is order O12488?",
+            lines=1,
+        ),
+        # ChatInterface includes a built-in Clear button
     )
 
 
