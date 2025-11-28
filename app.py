@@ -158,7 +158,9 @@ Reply in 1–2 friendly sentences explaining:
 Do NOT expose raw database field names, IDs, or the full record. Speak naturally to the customer.
 """
 
-        return llm.invoke(prompt).content
+        response = llm.invoke([{"role": "user", "content": prompt}])
+        return response.content 
+
 
     # Complaint or general help → LLM-only (no SQL)
     polite_prompt = f"""
@@ -167,7 +169,9 @@ Do not mention that you are an AI or language model.
 
 Customer message: {message}
 """
-    return llm.invoke(polite_prompt).content
+    response = llm.invoke([{"role": "user", "content": polite_prompt}])
+    return response.content 
+
 
 
 # =========================
