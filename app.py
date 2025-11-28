@@ -115,7 +115,7 @@ def classify_intent(message: str) -> str:
     return intent.strip().lower()
 
 
-ORDER_ID_PATTERN = re.compile(r"O\\d{5}")
+ORDER_ID_PATTERN = re.compile(r"O\d{5}")
 
 
 def extract_order_id(text: str) -> Optional[str]:
