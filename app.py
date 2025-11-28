@@ -6,7 +6,6 @@ from langchain_groq import ChatGroq
 from langchain_community.utilities import SQLDatabase
 from langchain_community.agent_toolkits import SQLDatabaseToolkit, create_sql_agent
 from langchain_core.messages import SystemMessage
-from langchain_core.prompts import ChatPromptTemplate
 
 
 # =========================
@@ -31,11 +30,11 @@ llm = ChatGroq(
 # 2. SQL DATABASE + SQL AGENT
 # =========================
 
-DB_PATH = "customer_orders.db"  # This file must exist in the repo
+DB_PATH = "customer_orders.db"  # This file must exist in the Space repo
 
 if not os.path.exists(DB_PATH):
     raise RuntimeError(
-        f"Database file '{DB_PATH}' not found. Make sure it's in the Space repository."
+        f"Database file '{DB_PATH}' not found. Make sure it is committed to the Space."
     )
 
 db = SQLDatabase.from_uri(f"sqlite:///{DB_PATH}")
@@ -87,20 +86,13 @@ Classify the user's message into one of these intents:
 Respond ONLY with the intent. No extra text.
 """
 
-intent_prompt = ChatPromptTemplate.from_messages(
-    [
-        ("system", intent_system_text),
-        ("human", "{user_message}"),
-    ]
-)
-
-# Build a chain: prompt → llm
-intent_chain = intent_prompt | llm
-
-
 def classify_intent(message: str) -> str:
-    """Classify user message into one of the defined intents."""
-    result = intent_chain.invoke({"user_message": message})
+    """Classify user message into one of the defined intents, using a simple string prompt."""
+    full_prompt = f"""{intent_system_text.strip()}
+
+User message: {message}
+"""
+    result = llm.invoke(full_prompt)  # pass a plain string
     return result.content.strip().lower()
 
 
@@ -172,8 +164,7 @@ Do NOT mention that you are an AI or language model.
 
 Customer message: {message}
 """
-
-    response = llm.invoke(polite_prompt)  # pass a plain string
+    response = llm.invoke(polite_prompt)  # again, pass a plain string
     return response.content
 
 
