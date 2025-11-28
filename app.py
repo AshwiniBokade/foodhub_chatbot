@@ -1,7 +1,7 @@
 import os
 import re
 import sqlite3
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 import gradio as gr
 from groq import Groq
@@ -21,16 +21,21 @@ client = Groq(api_key=GROQ_API_KEY)
 MODEL_NAME = "llama-3.3-70b-versatile"
 
 
-def groq_chat(system_text: str, user_text: str, temperature: float = 0.2) -> str:
+def groq_chat(user_prompt: str, temperature: float = 0.2) -> str:
     """
-    Small helper to call Groq chat completions with system + user messages.
+    Helper for Groq chat:
+    - We **only** send a single user message.
+    - No 'system' role, no complex message list.
+    This avoids all 'messages format' issues.
     """
     resp = client.chat.completions.create(
         model=MODEL_NAME,
         temperature=temperature,
         messages=[
-            {"role": "system", "content": system_text},
-            {"role": "user", "content": user_text},
+            {
+                "role": "user",
+                "content": user_prompt,
+            }
         ],
     )
     return resp.choices[0].message.content.strip()
@@ -93,7 +98,7 @@ def fetch_order_by_id(order_id: str) -> Optional[Dict[str, Any]]:
 # 3. INTENT CLASSIFICATION
 # =====================================================
 
-INTENT_SYSTEM_PROMPT = """
+INTENT_INSTRUCTION = """
 You are an intent classification assistant for FoodHub customer support.
 
 You must classify the customer's message into exactly ONE of these intents:
@@ -101,21 +106,21 @@ You must classify the customer's message into exactly ONE of these intents:
 - fetch_order_status  → “where is my order”, “track my order”, “status of order O123”
 - cancel_order        → asking to cancel a specific order
 - complaint           → cold food, late delivery, wrong item, quality issues, refund requests
-- general_help        → questions about policies, delivery time ranges, payment, how app works
+- general_help        → questions about policies, delivery time ranges, payment, how the app works
 - greeting            → hi, hello, hey, thanks, good morning, etc.
-- malicious           → hacking attempts, requests for all orders, all customer data, database dump
+- malicious           → hacking attempts, requests for ALL orders, ALL customer data, “I am a hacker”, database dump
 
-Return ONLY the intent string (e.g., fetch_order_status). No extra words.
+Return ONLY the intent string, exactly as written above.
+Do NOT return any explanation or extra text.
 """
+
+ORDER_ID_PATTERN = re.compile(r"O\d{5}")
 
 
 def classify_intent(message: str) -> str:
-    user_text = f"Customer message: {message}\n\nIntent:"
-    intent = groq_chat(INTENT_SYSTEM_PROMPT, user_text, temperature=0.0)
+    user_prompt = f"{INTENT_INSTRUCTION.strip()}\n\nCustomer message: {message}\n\nIntent:"
+    intent = groq_chat(user_prompt, temperature=0.0)
     return intent.strip().lower()
-
-
-ORDER_ID_PATTERN = re.compile(r"O\d{5}")
 
 
 def extract_order_id(text: str) -> Optional[str]:
@@ -132,27 +137,28 @@ def build_status_message(order: Dict[str, Any]) -> str:
     delivery_eta = order.get("delivery_eta")
     delivery_time = order.get("delivery_time")
 
-    # Make things human-readable
-    base = ""
-
     if status == "delivered":
         base = "Your order has already been delivered."
         if delivery_time:
             base += f" It was delivered at {delivery_time}."
-    elif status in ("preparing food", "preparing"):
+        return base
+
+    if status in ("preparing food", "preparing"):
         base = "Your order is currently being prepared in the restaurant."
         if delivery_eta:
             base += f" It is expected to be delivered around {delivery_eta}."
-    elif status in ("picked up", "out for delivery"):
+        return base
+
+    if status in ("picked up", "out for delivery"):
         base = "Your order has been picked up and is on its way to you."
         if delivery_eta:
             base += f" It should reach you around {delivery_eta}."
-    elif status == "canceled" or status == "cancelled":
-        base = "This order has been cancelled."
-    else:
-        base = f"The current status of your order is '{order.get('order_status', 'unknown')}'."
+        return base
 
-    return base
+    if status in ("canceled", "cancelled"):
+        return "This order has been cancelled."
+
+    return f"The current status of your order is '{order.get('order_status', 'unknown')}'."
 
 
 def can_order_be_cancelled(order: Dict[str, Any]) -> str:
@@ -161,7 +167,7 @@ def can_order_be_cancelled(order: Dict[str, Any]) -> str:
     if status in ("delivered",):
         return (
             "This order has already been delivered, so it can no longer be cancelled. "
-            "If there is an issue, you can raise a complaint in the app."
+            "If there is any issue with the order, you can raise a complaint in the app."
         )
     if status in ("canceled", "cancelled"):
         return "This order is already cancelled in our system."
@@ -178,7 +184,7 @@ def can_order_be_cancelled(order: Dict[str, Any]) -> str:
     )
 
 
-SUPPORT_GENERAL_SYSTEM_PROMPT = """
+SUPPORT_GENERAL_INSTRUCTION = """
 You are FoodHub Support Assistant for an online food delivery app.
 
 Guidelines:
@@ -190,8 +196,8 @@ Guidelines:
 
 
 def handle_general_or_complaint(message: str) -> str:
-    user_text = f"Customer message: {message}"
-    return groq_chat(SUPPORT_GENERAL_SYSTEM_PROMPT, user_text, temperature=0.4)
+    user_prompt = f"{SUPPORT_GENERAL_INSTRUCTION.strip()}\n\nCustomer message: {message}"
+    return groq_chat(user_prompt, temperature=0.4)
 
 
 # =====================================================
@@ -232,9 +238,8 @@ def foodhub_chat_agent(message: str) -> str:
                 "Please double-check the ID and try again."
             )
 
-        status_msg = build_status_message(order)
-
         if intent == "fetch_order_status":
+            status_msg = build_status_message(order)
             return f"For order {order_id}: {status_msg}"
 
         # cancel_order
@@ -249,7 +254,7 @@ def foodhub_chat_agent(message: str) -> str:
 # 6. GRADIO UI
 # =====================================================
 
-def gradio_foodhub_chat(user_message: str, history: list):
+def gradio_foodhub_chat(user_message: str, history: List[Tuple[str, str]]):
     bot_reply = foodhub_chat_agent(user_message)
     history = history or []
     history.append((user_message, bot_reply))
