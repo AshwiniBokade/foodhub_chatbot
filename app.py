@@ -93,8 +93,12 @@ intent_prompt = ChatPromptTemplate.from_messages(
 )
 
 def classify_intent(llm, message: str) -> str:
-    chain = intent_prompt | llm
-    result = chain.invoke({"user_message": message})
+    prompt = f"{intent_prompt}\nUser message: {message}"
+    
+    # IMPORTANT: pass a list of messages, not a plain string
+    result = llm.invoke([
+        {"role": "user", "content": prompt}
+    ])
     return result.content.strip().lower()
 
 
