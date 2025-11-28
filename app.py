@@ -1,6 +1,5 @@
 import os
 import re
-import sqlite3
 import gradio as gr
 
 from langchain_groq import ChatGroq
@@ -16,7 +15,9 @@ from langchain_core.prompts import ChatPromptTemplate
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 if not GROQ_API_KEY:
-    raise RuntimeError("GROQ_API_KEY is not set. Please add it in the Hugging Face Space secrets.")
+    raise RuntimeError(
+        "GROQ_API_KEY is not set. Please add it in the Hugging Face Space Secrets."
+    )
 
 # Low temperature LLM for deterministic behavior
 llm = ChatGroq(
@@ -30,11 +31,12 @@ llm = ChatGroq(
 # 2. SQL DATABASE + SQL AGENT
 # =========================
 
-# SQLite DB should be in the same directory as app.py
-DB_PATH = "customer_orders.db"
+DB_PATH = "customer_orders.db"  # This file must exist in the repo
 
 if not os.path.exists(DB_PATH):
-    raise RuntimeError(f"Database file '{DB_PATH}' not found. Make sure it's in the Space repository.")
+    raise RuntimeError(
+        f"Database file '{DB_PATH}' not found. Make sure it's in the Space repository."
+    )
 
 db = SQLDatabase.from_uri(f"sqlite:///{DB_PATH}")
 
@@ -45,7 +47,7 @@ for querying the orders database.
 Your responsibilities:
 - When given an order_id, use the SQL tools to look up that order in the database.
 - Then respond to the customer in 1–2 short, friendly sentences.
-- Focus on: order status (preparing, picked up, delivered, cancelled, delivered, etc.)
+- Focus on: order status (preparing, picked up, delivered, cancelled, etc.)
   and, if available, the estimated or actual delivery time.
 - Do NOT list database column names or echo an entire row.
 - Do NOT mention SQL, tables, schemas, or any internal technical details.
@@ -67,7 +69,7 @@ db_agent = create_sql_agent(
 
 
 # =========================
-# 3. INTENT CLASSIFIER + CHAT AGENT
+# 3. INTENT CLASSIFIER
 # =========================
 
 intent_system_text = """
@@ -95,6 +97,7 @@ intent_prompt = ChatPromptTemplate.from_messages(
 # Build a chain: prompt → llm
 intent_chain = intent_prompt | llm
 
+
 def classify_intent(message: str) -> str:
     """Classify user message into one of the defined intents."""
     result = intent_chain.invoke({"user_message": message})
@@ -102,10 +105,17 @@ def classify_intent(message: str) -> str:
 
 
 def extract_order_id(text: str):
+    """Extract order IDs of the form O12345 from the text."""
     match = re.search(r"O\d{5}", text)
     return match.group(0) if match else None
 
+
+# =========================
+# 4. MAIN CHAT AGENT LOGIC
+# =========================
+
 def foodhub_chat_agent(message: str) -> str:
+    """Main chatbot logic combining intent classification + SQL agent + LLM."""
     intent = classify_intent(message)
     order_id = extract_order_id(message)
 
@@ -121,7 +131,7 @@ def foodhub_chat_agent(message: str) -> str:
 
     # SQL needed but missing order ID
     if intent in ["fetch_order_status", "cancel_order"] and not order_id:
-        return "Could you please share your order ID (e.g., O12488) so I can check the details for you?"
+        return "Could you please share your order ID (for example, O12488) so I can check the details for you?"
 
     # SQL needed with order ID
     if intent in ["fetch_order_status", "cancel_order"] and order_id:
@@ -157,19 +167,18 @@ Speak as a FoodHub support representative.
     # Complaint or general help → LLM only
     polite_prompt = f"""
 You are a FoodHub support assistant for an online food delivery app.
-Answer in 2–3 polite sentences.
-Do NOT mention being an AI.
+Answer in 2–3 polite, clear sentences.
+Do NOT mention that you are an AI or language model.
 
 Customer message: {message}
 """
 
-    response = llm.invoke(polite_prompt)
+    response = llm.invoke(polite_prompt)  # pass a plain string
     return response.content
 
 
-
 # =========================
-# 4. GRADIO UI
+# 5. GRADIO UI
 # =========================
 
 def gradio_foodhub_chat(message, history):
@@ -179,12 +188,14 @@ def gradio_foodhub_chat(message, history):
     history.append((message, bot_reply))
     return "", history
 
+
 with gr.Blocks() as demo:
     gr.Markdown("## 🍕 FoodHub Order Support Chatbot")
     gr.Markdown(
         "Ask about your order status, cancellations, late delivery, or issues with your food.<br>"
-        "For order-specific queries, please mention your <b>order ID</b> (for example: <code>O12488</code>).",
-        elem_id="description"
+        "For order-specific queries, please mention your <b>order ID</b> "
+        "(for example: <code>O12488</code>).",
+        elem_id="description",
     )
 
     chatbot = gr.Chatbot(height=400, label="FoodHub Support")
@@ -196,6 +207,7 @@ with gr.Blocks() as demo:
 
     msg.submit(gradio_foodhub_chat, inputs=[msg, chatbot], outputs=[msg, chatbot])
     clear.click(lambda: ("", []), None, [msg, chatbot])
+
 
 if __name__ == "__main__":
     demo.launch()
