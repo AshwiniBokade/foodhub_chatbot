@@ -116,61 +116,47 @@ def foodhub_chat_agent(message: str) -> str:
     if intent == "greeting":
         return "Hi there! 👋 How can I assist you with your FoodHub order today?"
 
-    # If SQL is required but no ID given
+    # SQL needed but missing order ID
     if intent in ["fetch_order_status", "cancel_order"] and not order_id:
         return "Could you please share your order ID (e.g., O12488) so I can check the details for you?"
 
-    # If SQL is needed and we have an order_id
+    # SQL needed with order ID
     if intent in ["fetch_order_status", "cancel_order"] and order_id:
-        # Step 1: ask the SQL agent for internal order details
-        sql_query = f"Fetch all details for order_id {order_id}"
-        sql_result = db_agent.invoke(sql_query)["output"]
 
-        # Step 2: let the LLM turn those internal details into a polite summary
         if intent == "fetch_order_status":
-            prompt = f"""
-You are a FoodHub customer support assistant.
-
-You have this internal order record:
-{sql_result}
-
-The customer asked: "Where is my order {order_id}?"
-
-Reply in 1–2 friendly sentences summarizing:
-- the current order status (e.g., preparing, picked up, delivered, cancelled), and
-- if available, when it was delivered or the expected delivery time.
-
-Do NOT expose raw database field names, IDs, or the full record. Speak naturally to the customer.
+            sql_prompt = f"""
+Use SQL to retrieve order_id {order_id}.
+Then respond in 1–2 sentences with ONLY:
+- the order status
+- delivery/ETA if available
+Be friendly and DO NOT list database fields.
 """
-        else:  # intent == "cancel_order"
-            prompt = f"""
-You are a FoodHub customer support assistant.
-
-You have this internal order record:
-{sql_result}
-
-The customer said: "I want to cancel my order {order_id}."
-
-Reply in 1–2 friendly sentences explaining:
-- the current status of the order (e.g., preparing, out for delivery, already cancelled, delivered), and
-- based on that status, whether it can still be cancelled or not (use common sense for a food delivery app).
-
-Do NOT expose raw database field names, IDs, or the full record. Speak naturally to the customer.
+        else:  # cancel_order
+            sql_prompt = f"""
+Use SQL to check order_id {order_id}.
+Then respond in 1–2 sentences explaining:
+- the order status
+- whether it can be cancelled (common sense)
+Do NOT return raw database fields.
 """
 
-        response = llm.invoke([{"role": "user", "content": prompt}])
-        return response.content 
+        sql_result = db_agent.invoke(sql_prompt)["output"]
+        return sql_result
 
-
-    # Complaint or general help → LLM-only (no SQL)
+    # Complaint or general help → LLM only
     polite_prompt = f"""
-You are FoodHub Support Assistant. Answer politely in 2–3 short sentences.
-Do not mention that you are an AI or language model.
+You are a FoodHub support assistant.
+Answer in 2–3 polite sentences.
+Do NOT mention being an AI.
 
 Customer message: {message}
 """
-    response = llm.invoke([{"role": "user", "content": polite_prompt}])
-    return response.content 
+ 
+    response = llm.invoke([
+        {"role": "user", "content": polite_prompt}
+    ])
+
+    return response.content
 
 
 
